@@ -1,5 +1,18 @@
-const Grid = require('./Grid.js');
-const Player = require('./Player.js');
+import type { Server } from 'socket.io';
+import { type GetChunkOptions, Grid } from './Grid.js';
+import { type SerializedPlayer, Player } from './Player.js';
+import {
+    type LegacyAction,
+    type LegacyChunk,
+    type LegacyChunkCell,
+    type LegacyCoord,
+    type LegacyFlagged,
+    type LegacyUpdate,
+    type Maybe,
+    type Update,
+    expectRandom,
+    splitKey,
+} from './legacy.js';
 
 const COLORS = [
     '#FF6B6B',
@@ -19,7 +32,37 @@ const COLORS = [
     '#EF476F',
 ];
 
-class Game {
+type AiProfile = {
+    flagChance: number;
+    chordChance: number;
+    baseDelayMult: number;
+    guessDelayMin: number;
+    guessDelayMax: number;
+};
+
+type AiFocus = {
+    x: number;
+    y: number;
+    ttl: number;
+};
+
+const DEFAULT_AI_PROFILE = 1;
+
+export class Game {
+    grid: Grid;
+    players: Map<string, Player>;
+    deadPlayers: Map<string, number>;
+    colorIndex: number;
+    io: Server | null;
+    safeRadius: number;
+    aiPlayers: Set<string>;
+    aiNextActionAt: Map<string, number>;
+    aiFocus: Map<string, AiFocus>;
+    aiSkill: Map<string, AiProfile>;
+    aiIdCounter: number;
+    aiMoveIntervalMs: number;
+    aiProfiles: AiProfile[];
+
     constructor() {
         this.grid = new Grid();
         this.players = new Map();
@@ -56,20 +99,25 @@ class Game {
                 guessDelayMax: 1100,
             },
         ];
+        if (DEFAULT_AI_PROFILE >= this.aiProfiles.length) {
+            throw new RangeError(
+                `Default AI profile is set to idx=${DEFAULT_AI_PROFILE}, but there aren't that many profiles!`,
+            );
+        }
         console.log('Game initialized - player count:', this.players.size);
     }
 
-    setIO(io) {
+    setIO(io: Server) {
         this.io = io;
     }
 
     getNextColor() {
-        const color = COLORS[this.colorIndex % COLORS.length];
+        const color = COLORS[this.colorIndex % COLORS.length]!;
         this.colorIndex++;
         return color;
     }
 
-    addAIPlayers(count) {
+    addAIPlayers(count: number) {
         const added = [];
         for (let i = 0; i < count; i++) {
             const id = this.getNextAIId();
@@ -81,10 +129,7 @@ class Game {
                 y: playerData.player.y,
                 ttl: 40,
             });
-            const profile =
-                this.aiProfiles[
-                    Math.floor(Math.random() * this.aiProfiles.length)
-                ];
+            const profile = expectRandom(this.aiProfiles);
             this.aiSkill.set(id, profile);
             added.push({
                 id: id,
@@ -104,7 +149,7 @@ class Game {
         return id;
     }
 
-    setAIPlayerCount(targetCount) {
+    setAIPlayerCount(targetCount: number) {
         const desired = Math.max(0, targetCount);
         const current = this.aiPlayers.size;
         const added = [];
@@ -140,11 +185,11 @@ class Game {
         this.grid.setSafeZones(zones);
     }
 
-    findSpawnLocation(playerId) {
+    findSpawnLocation(playerId: string) {
         const activePlayers = Array.from(this.players.values()).filter(
             p => p.alive,
         );
-        const isValidSpawn = candidate => {
+        const isValidSpawn = (candidate: LegacyCoord) => {
             if (
                 this.grid.hasOtherPlayerNearby(
                     candidate.x,
@@ -181,8 +226,7 @@ class Game {
 
         const maxAttempts = 1000;
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
-            const targetPlayer =
-                activePlayers[Math.floor(Math.random() * activePlayers.length)];
+            const targetPlayer = expectRandom(activePlayers);
             const distance = 20 + Math.floor(Math.random() * 41);
             const angle = Math.random() * Math.PI * 2;
 
@@ -207,8 +251,7 @@ class Game {
             }
         }
 
-        const targetPlayer =
-            activePlayers[Math.floor(Math.random() * activePlayers.length)];
+        const targetPlayer = expectRandom(activePlayers);
         const distance = 40;
         const angle = Math.random() * Math.PI * 2;
         const candidate = {
@@ -230,12 +273,12 @@ class Game {
         return candidate;
     }
 
-    addPlayer(id) {
+    addPlayer(id: string) {
         const spawn = this.findSpawnLocation(id);
         return this.addPlayerAt(id, spawn.x, spawn.y);
     }
 
-    addPlayerAt(id, x, y) {
+    addPlayerAt(id: string, x: number, y: number) {
         const color = this.getNextColor();
         const player = new Player(id, x, y, color);
 
@@ -246,7 +289,7 @@ class Game {
         }
 
         const safeRadius = this.safeRadius;
-        const isInSafeZone = (sx, sy) => {
+        const isInSafeZone = (sx: number, sy: number) => {
             const dx = sx - x;
             const dy = sy - y;
             return Math.sqrt(dx * dx + dy * dy) <= safeRadius;
@@ -258,7 +301,7 @@ class Game {
         processed.add(`${x},${y}`);
 
         while (toProcess.length > 0) {
-            const current = toProcess.shift();
+            const current = toProcess.shift()!;
 
             const cell = this.grid.getCell(current.x, current.y);
             if (cell.state === 'uncovered') continue;
@@ -297,7 +340,7 @@ class Game {
         };
     }
 
-    removePlayer(id) {
+    removePlayer(id: string) {
         const clearResult = this.grid.clearPlayerCells(id);
 
         for (const cell of clearResult.cellsToReset) {
@@ -311,7 +354,7 @@ class Game {
         return clearResult.cellsToReset;
     }
 
-    getActivePlayers() {
+    getActivePlayers(): SerializedPlayer[] {
         return Array.from(this.players.values()).map(p => p.toJSON());
     }
 
@@ -322,7 +365,7 @@ class Game {
         return players;
     }
 
-    isAdjacentToPlayerCell(playerId, x, y) {
+    isAdjacentToPlayerCell(playerId: string, x: number, y: number) {
         const player = this.players.get(playerId);
         if (!player || !player.alive) return false;
 
@@ -340,7 +383,7 @@ class Game {
         return false;
     }
 
-    hasValidMoves(playerId) {
+    hasValidMoves(playerId: string) {
         const playerCells = this.grid.getPlayerCells(playerId);
 
         for (const cell of playerCells) {
@@ -362,17 +405,19 @@ class Game {
         return false;
     }
 
-    getAIAction(playerId) {
+    getAIAction(playerId: string): LegacyAction | null {
         const playerCells = this.grid.getPlayerCells(playerId);
         if (playerCells.length === 0) return null;
-        const coveredSeen = new Set();
-        const safeMoves = [];
-        const flagMoves = [];
-        const chordMoves = [];
-        const guessMoves = [];
-        const skill = this.aiSkill.get(playerId) || this.aiProfiles[1];
-        const focus = this.aiFocus.get(playerId) || null;
-        const isNearFocus = pos => {
+
+        const coveredSeen = new Set<string>();
+        const safeMoves: LegacyCoord[] = [];
+        const flagMoves: LegacyCoord[] = [];
+        const chordMoves: LegacyCoord[] = [];
+        const guessMoves: LegacyCoord[] = [];
+        const skill: AiProfile =
+            this.aiSkill.get(playerId) ?? this.aiProfiles[DEFAULT_AI_PROFILE]!;
+        const focus: AiFocus | null = this.aiFocus.get(playerId) ?? null;
+        const isNearFocus = (pos: LegacyCoord) => {
             if (!focus) return false;
             const dx = pos.x - focus.x;
             const dy = pos.y - focus.y;
@@ -432,40 +477,25 @@ class Game {
 
         if (flagMoves.length > 0 && Math.random() < skill.flagChance) {
             const focusFlags = flagMoves.filter(isNearFocus);
-            const pick = (focusFlags.length > 0 ? focusFlags : flagMoves)[
-                Math.floor(
-                    Math.random() *
-                        (focusFlags.length > 0
-                            ? focusFlags.length
-                            : flagMoves.length),
-                )
-            ];
+            const pick = expectRandom(
+                focusFlags.length > 0 ? focusFlags : flagMoves,
+            );
             return { type: 'flag', ...pick, isGuess: false, focusMove: true };
         }
 
         if (chordMoves.length > 0 && Math.random() < skill.chordChance) {
             const focusChords = chordMoves.filter(isNearFocus);
-            const pick = (focusChords.length > 0 ? focusChords : chordMoves)[
-                Math.floor(
-                    Math.random() *
-                        (focusChords.length > 0
-                            ? focusChords.length
-                            : chordMoves.length),
-                )
-            ];
+            const pick = expectRandom(
+                focusChords.length > 0 ? focusChords : chordMoves,
+            );
             return { type: 'chord', ...pick, isGuess: false, focusMove: true };
         }
 
         if (safeMoves.length > 0) {
             const focusSafe = safeMoves.filter(isNearFocus);
-            const pick = (focusSafe.length > 0 ? focusSafe : safeMoves)[
-                Math.floor(
-                    Math.random() *
-                        (focusSafe.length > 0
-                            ? focusSafe.length
-                            : safeMoves.length),
-                )
-            ];
+            const pick = expectRandom(
+                focusSafe.length > 0 ? focusSafe : safeMoves,
+            );
             return { type: 'move', ...pick, isGuess: false, focusMove: true };
         }
 
@@ -488,21 +518,19 @@ class Game {
 
         if (guessMoves.length > 0) {
             const focusGuess = guessMoves.filter(isNearFocus);
-            const pick = (focusGuess.length > 0 ? focusGuess : guessMoves)[
-                Math.floor(
-                    Math.random() *
-                        (focusGuess.length > 0
-                            ? focusGuess.length
-                            : guessMoves.length),
-                )
-            ];
+            const pick = expectRandom(
+                focusGuess.length > 0 ? focusGuess : guessMoves,
+            );
             return { type: 'move', ...pick, isGuess: true, focusMove: true };
         }
 
         return null;
     }
 
-    handleChord(playerId, data) {
+    handleChord(
+        playerId: string,
+        data: LegacyCoord,
+    ): Maybe<Update.Move | Update.NoMoves | Update.Death | Update.Autoflag> {
         const { x, y } = data;
         const player = this.players.get(playerId);
 
@@ -538,7 +566,7 @@ class Game {
         }
 
         if (flagCount !== cell.adjacentMines) {
-            const coveredUnflagged = [];
+            const coveredUnflagged: LegacyCoord[] = [];
             for (const { x: ax, y: ay, cell: adjCell } of adjacentCells) {
                 if (adjCell.state === 'covered' && !adjCell.flag) {
                     coveredUnflagged.push({ x: ax, y: ay });
@@ -556,7 +584,7 @@ class Game {
                         };
                     }
                 }
-                const flags = [];
+                const flags: LegacyFlagged[] = [];
                 for (const pos of coveredUnflagged) {
                     const flagResult = this.grid.toggleFlag(
                         pos.x,
@@ -567,6 +595,7 @@ class Game {
                         flags.push({ x: pos.x, y: pos.y, flagged: true });
                     }
                 }
+
                 return {
                     success: true,
                     update: {
@@ -582,7 +611,7 @@ class Game {
             };
         }
 
-        let allUncoveredCells = [];
+        let allUncoveredCells: LegacyChunkCell[] = [];
         let hitMine = false;
         let mineCell = null;
 
@@ -628,7 +657,7 @@ class Game {
                 update: {
                     type: 'death',
                     playerId: playerId,
-                    mineCell: mineCell,
+                    mineCell: mineCell!,
                     playerCells: playerCells,
                     uncoveredCells: allUncoveredCells,
                     score: player.score,
@@ -677,7 +706,11 @@ class Game {
         };
     }
 
-    handleMove(playerId, data, force = false) {
+    handleMove(
+        playerId: string,
+        data: LegacyCoord,
+        force = false,
+    ): Maybe<Update.Death | Update.Move | Update.NoMoves> {
         const player = this.players.get(playerId);
         if (!player || !player.alive) {
             return { success: false, error: 'Player not active' };
@@ -767,7 +800,7 @@ class Game {
         };
     }
 
-    recoverPlayerCells(playerId, cells) {
+    recoverPlayerCells(playerId: string, cells: LegacyCoord[]) {
         if (!cells || cells.length === 0) {
             if (this.io) {
                 this.io.emit('recoveryComplete', { playerId: playerId });
@@ -794,7 +827,7 @@ class Game {
                     return;
                 }
 
-                const cell = cells[index];
+                const cell = cells[index]!;
                 this.grid.recoverCell(cell.x, cell.y, playerId);
 
                 if (this.io) {
@@ -845,7 +878,7 @@ class Game {
         const startTime = Date.now();
         const tickMs = 50;
 
-        const recoverCellAtIndex = cell => {
+        const recoverCellAtIndex = (cell: LegacyCoord) => {
             this.grid.recoverCell(cell.x, cell.y, playerId);
 
             if (this.io) {
@@ -888,12 +921,12 @@ class Game {
                 Math.floor((elapsed / totalDurationMs) * cells.length),
             );
             while (index < targetIndex) {
-                recoverCellAtIndex(cells[index]);
+                recoverCellAtIndex(cells[index]!);
                 index++;
             }
             if (elapsed >= totalDurationMs || index >= cells.length) {
                 while (index < cells.length) {
-                    recoverCellAtIndex(cells[index]);
+                    recoverCellAtIndex(cells[index]!);
                     index++;
                 }
                 clearInterval(interval);
@@ -904,7 +937,7 @@ class Game {
         }, tickMs);
     }
 
-    handleFlag(playerId, data) {
+    handleFlag(playerId: string, data: LegacyCoord): Maybe<Update.Flag> {
         const player = this.players.get(playerId);
         if (!player || !player.alive) {
             return { success: false, error: 'Player not active' };
@@ -922,29 +955,33 @@ class Game {
             return { success: false, error: 'Cannot flag cell' };
         }
 
+        const update: Update.Flag = {
+            type: 'flag',
+            playerId: playerId,
+            x: x,
+            y: y,
+            flagged: result.flagged,
+        };
         return {
             success: true,
-            update: {
-                type: 'flag',
-                playerId: playerId,
-                x: x,
-                y: y,
-                flagged: result.flagged,
-            },
+            update,
         };
     }
 
-    getChunks(chunkKeys, options = null) {
+    getChunks(
+        chunkKeys: string[],
+        options: GetChunkOptions | null = null,
+    ): LegacyChunk[] {
         const chunks = [];
         for (const key of chunkKeys) {
-            const [x, y] = key.split(',').map(Number);
+            const [x, y] = splitKey(key);
             chunks.push(this.grid.getChunk(x, y, options));
         }
         return chunks;
     }
 
     update(debugPlayers = new Set()) {
-        const updates = [];
+        const updates: LegacyUpdate[] = [];
         const now = Date.now();
 
         for (const [playerId, deathTime] of this.deadPlayers.entries()) {
@@ -982,13 +1019,14 @@ class Game {
                         player.addScore(uncoverResult.uncoveredCells.length);
                     }
 
-                    updates.push({
+                    const update: Update.Respawn = {
                         type: 'respawn',
                         playerId: playerId,
                         x: spawn.x,
                         y: spawn.y,
                         uncoveredCells: uncoverResult.uncoveredCells,
-                    });
+                    };
+                    updates.push(update);
 
                     this.deadPlayers.delete(playerId);
                 }
@@ -1002,7 +1040,9 @@ class Game {
             if (now < nextActionAt) continue;
             const action = this.getAIAction(playerId);
             if (!action) continue;
-            const skill = this.aiSkill.get(playerId) || this.aiProfiles[1];
+            const skill =
+                this.aiSkill.get(playerId) ||
+                this.aiProfiles[DEFAULT_AI_PROFILE]!;
             const jitter = Math.floor(Math.random() * 300) - 150;
             const baseDelay = Math.max(
                 120,
@@ -1043,10 +1083,7 @@ class Game {
                 if (focus.ttl <= 0 || Math.random() < 0.1) {
                     const playerCells = this.grid.getPlayerCells(playerId);
                     if (playerCells.length > 0) {
-                        const seed =
-                            playerCells[
-                                Math.floor(Math.random() * playerCells.length)
-                            ];
+                        const seed = expectRandom(playerCells);
                         focus.x = seed.x;
                         focus.y = seed.y;
                         focus.ttl = 30 + Math.floor(Math.random() * 30);
@@ -1067,5 +1104,3 @@ class Game {
         return updates;
     }
 }
-
-module.exports = Game;

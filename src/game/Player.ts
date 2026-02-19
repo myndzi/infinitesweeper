@@ -1,3 +1,12 @@
+export type SerializedPlayer = {
+    id: string;
+    x: number;
+    y: number;
+    color: string;
+    score: number;
+    alive: boolean;
+};
+
 export class Player {
     id: string;
     x: number;
@@ -29,7 +38,7 @@ export class Player {
         this.alive = true;
     }
 
-    toJSON() {
+    toJSON(): SerializedPlayer {
         return {
             id: this.id,
             x: this.x,
