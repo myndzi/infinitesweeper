@@ -102,4 +102,5 @@ class PlayerStore {
     }
 }
 
-module.exports = PlayerStore;
+const playerStore = new PlayerStore();
+module.exports = { PlayerStore, playerStore };

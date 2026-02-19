@@ -10,6 +10,16 @@
             "name": "Debug current file",
             "skipFiles": ["<node_internals>/**"],
             "program": "${file}"
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "Test",
+            "skipFiles": ["<node_internals>/**"],
+            "program": "${workspaceFolder}/game/test.js",
+            "env": {
+                "DEBUG": "true"
+            }
         }
     ]
 }

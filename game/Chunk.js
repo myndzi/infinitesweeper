@@ -2,7 +2,13 @@
 
 /** @typedef {import('./Player')} Player */
 
-const { bitfield, bitIsSet, setBit, bulkUnset, clearBit } = require('./util');
+const {
+    bitfield,
+    bitIsSet,
+    setBit,
+    bulkUnset,
+    clearBit,
+} = require('./util/bitfield');
 
 class Chunk {
     /**
@@ -32,11 +38,21 @@ class Chunk {
      */
     revealed = bitfield();
 
+    // TODO: is there ever a case where we care about what cells
+    // are revealed without caring about who owns them?
+    // perhaps we should just ditch `revealed`?
+
     /**
      * @protected
      * @type {Map<number, Uint32Array>}
      */
     owned = new Map();
+
+    /**
+     * @protected
+     * @type {number}
+     */
+    generation = 0;
 
     /**
      * @param {Uint32Array} mines
@@ -48,6 +64,8 @@ class Chunk {
     }
 
     /**
+     * Return true if the cell at `bitpos` is a mine
+     *
      * @param {number} bitpos
      * @returns {boolean}
      */
@@ -56,6 +74,8 @@ class Chunk {
     }
 
     /**
+     * Debug/testing : set a mine at `bitpos`
+     *
      * @param {number} bitpos
      * @returns {void}
      */
@@ -64,6 +84,8 @@ class Chunk {
     }
 
     /**
+     * Return true if the cell at `bitpos` is revealed
+     *
      * @param {number} bitpos
      * @returns {boolean}
      */
@@ -72,6 +94,8 @@ class Chunk {
     }
 
     /**
+     * Return true if the cell at `bitpos` is flagged
+     *
      * @param {number} bitpos
      * @returns {boolean}
      */
@@ -80,17 +104,23 @@ class Chunk {
     }
 
     /**
+     * Mark the cell at `bitpos` as flagged
+     *
      * @param {number} bitpos
      */
     flag(bitpos) {
         setBit(this.flags, bitpos);
+        this.generation++;
     }
 
     /**
+     * Mark the cell at `bitpos` as unflagged
+     *
      * @param {number} bitpos
      */
     unflag(bitpos) {
         clearBit(this.flags, bitpos);
+        this.generation++;
     }
 
     /**
@@ -120,6 +150,8 @@ class Chunk {
         }
         setBit(owned, bitpos);
 
+        this.generation++;
+
         return dead;
     }
 
@@ -147,20 +179,36 @@ class Chunk {
         bulkUnset(this.revealed, owned);
         this.owned.delete(playerId);
 
+        this.generation++;
+
         return this.owned.size === 0;
     }
 
     /**
+     * If the cell at `bitpos` is owned, return the player id; else, undefined
+     *
      * @param {number} bitpos
-     * @returns {number}
+     * @returns {number|undefined}
      */
     ownerid(bitpos) {
-        if (!bitIsSet(this.revealed, bitpos)) return 0;
+        if (!bitIsSet(this.revealed, bitpos)) return undefined;
+
         for (const [ownerid, bits] of this.owned.entries()) {
             if (bitIsSet(bits, bitpos)) return ownerid;
         }
-        return 0;
+        return undefined;
+    }
+
+    /**
+     * Return true if this chunk has changed since the passed-in value
+     *
+     * @param {number} generation
+     * @returns {boolean}
+     */
+    isNewerThan(generation) {
+        return this.generation > generation;
     }
 }
 
-module.exports = Chunk;
+const EMPTY_CHUNK = new Chunk(bitfield());
+module.exports = { Chunk, EMPTY_CHUNK };
