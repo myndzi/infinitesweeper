@@ -1,15 +1,12 @@
-// @ts-check
-/// <reference types="vitest/globals" />
-
-const { bitfield, setBit, bfstr, bitIsSet, clearBit } = require('./bitfield');
-const { NUM_CHUNK_BITS } = require('./constants');
-const { pack } = require('./coords');
+import { bitfield, setBit, bfstr, bitIsSet, clearBit } from './bitfield.js';
+import { NUM_CHUNK_BITS } from './constants.js';
+import { pack } from './coords.js';
 
 describe('bitfields', () => {
     it("puts the bit where it's expected", () => {
         let bf = bitfield();
         setBit(bf, pack.bitpos(0, 0));
-        expect(bf[0] & 1).not.toEqual(0);
+        expect(bf[0]! & 1).not.toEqual(0);
         expect(bfstr(bf)).toMatchInlineSnapshot(`
           "10000000
           00000000
@@ -23,7 +20,7 @@ describe('bitfields', () => {
 
         bf = bitfield();
         setBit(bf, pack.bitpos(7, 7));
-        expect(bf[1] & 0x80000000).not.toEqual(0);
+        expect(bf[1]! & 0x80000000).not.toEqual(0);
         expect(bfstr(bf)).toMatchInlineSnapshot(`
           "00000000
           00000000

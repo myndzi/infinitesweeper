@@ -1,18 +1,15 @@
-// @ts-check
-/// <reference types="vitest/globals" />
+import { ChunkStore } from './ChunkStore.js';
+import { Player } from './Player.js';
+import { PlayerStore } from './PlayerStore.js';
+import { type Bitfield, bitfield } from './util/bitfield.js';
+import { CHUNK_EDGE_SIZE } from './util/constants.js';
+import { type PackedCellCoord, neighbors, pack } from './util/coords.js';
 
-const Player = require('./Player');
-const { ChunkStore } = require('./ChunkStore');
-const { PlayerStore } = require('./PlayerStore');
-const { CHUNK_EDGE_SIZE, BITFIELD_SIZE } = require('./util/constants');
-const { unpack, neighbors, pack } = require('./util/coords');
-
-/**
- * @param {number} expected
- * @param {ChunkStore} chunkStore
- * @param {bigint} packed
- */
-const assertCount = (expected, chunkStore, packed) => {
+const assertCount = (
+    expected: number,
+    chunkStore: ChunkStore,
+    packed: PackedCellCoord,
+) => {
     const count = chunkStore.countNeighboringMines(packed, mockPlayer);
     expect(count).toEqual(expected);
 };
@@ -22,18 +19,14 @@ const assertCount = (expected, chunkStore, packed) => {
  * @param {number} x
  * @param {number} y
  */
-const assertSeen = (chunkStore, x, y) => {
+const assertSeen = (chunkStore: ChunkStore, x: number, y: number) => {
     const packed = pack(x, y);
     for (const pos of neighbors(packed)) {
         assertCount(1, chunkStore, pos);
     }
 };
 
-/**
- * @param {number} difficulty
- * @returns {Uint32Array}
- */
-const emptyChunkMines = difficulty => new Uint32Array(BITFIELD_SIZE);
+const emptyChunkMines = (difficulty: number): Bitfield => bitfield();
 
 const mockPlayer = new Player('foo', 0, 0, '#ffffff');
 const playerStore = new PlayerStore();
@@ -42,8 +35,7 @@ playerStore.add(mockPlayer);
 const newChunkStore = () => new ChunkStore(playerStore, emptyChunkMines);
 
 describe('ChunkStore', () => {
-    /** @type {[x: number, y: number][]} */
-    const coords = [];
+    const coords: [x: number, y: number][] = [];
     const edge_size = CHUNK_EDGE_SIZE;
     for (let x = 0; x < edge_size; x++) {
         for (let y = 0; y < edge_size; y++) {

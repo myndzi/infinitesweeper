@@ -1,65 +1,49 @@
-// @ts-check
+import { Chunk } from './Chunk.js';
+import type { Player } from './Player.js';
+import type { PlayerStore, SyntheticPlayerId } from './PlayerStore.js';
+import { playerStore } from './PlayerStore.js';
+import { getDifficulty, ifTrace } from './debug.js';
+import type {
+    IntermediateRenderer,
+    Renderer,
+} from './render/IntermediateRenderer.js';
+import { type Bitfield, bitfield } from './util/bitfield.js';
+import { genChunkMines as _genChunkMines } from './util/chunkops.js';
+import { BITPOS_SHIFT } from './util/constants.js';
+import {
+    type ChunkKey,
+    type PackedCellCoord,
+    neighbors,
+    offset,
+    pack,
+    split,
+} from './util/coords.js';
+
+// avoid property dereferencing in hot loops
+const { chunkKey: offsetChunkKey } = offset;
+const { chunkKey: packChunkKey, split: packSplit } = pack;
 
 const ITERATIVE_REVEAL_LIMIT = 10_000;
 
-/** @typedef {import('./Player')} Player */
-/** @typedef {import('./PlayerStore').PlayerStore} PlayerStore */
-/** @typedef {import('./render/IntermediateRenderer').IntermediateRenderer} IntermediateRenderer */
+export type ChunkGenMines = (difficulty: number) => Bitfield;
 
-const { Chunk } = require('./Chunk');
-const { playerStore } = require('./PlayerStore');
-const { getDifficulty, ifTrace } = require('./config');
-const { bitfield } = require('./util/bitfield');
-const { genChunkMines: _genChunkMines } = require('./util/chunkops');
-const { BITPOS_SHIFT } = require('./util/constants');
-const {
-    neighbors,
-    chunkKey,
-    bitpos,
-    split,
-    pack,
-    offset: { chunkKey: offsetChunkKey },
-} = require('./util/coords');
+export class ChunkStore {
+    protected chunks: Map<ChunkKey, Chunk> = new Map();
+    protected players: PlayerStore;
+    protected genChunkMines: ChunkGenMines;
 
-const { chunkKey: packChunkKey, split: packSplit } = pack;
-
-class ChunkStore {
-    /**
-     * @protected
-     * @type {Map<bigint, Chunk>}
-     */
-    chunks = new Map();
-
-    /**
-     * @protected
-     * @type {PlayerStore}
-     */
-    players;
-
-    /**
-     * @protected
-     * @type {(difficulty: number) => Uint32Array}
-     */
-    genChunkMines;
-
-    /**
-     * @param {PlayerStore} playerStore
-     * @param {(difficulty: number) => Uint32Array} genChunkMines
-     */
-    constructor(playerStore, genChunkMines = _genChunkMines) {
+    constructor(
+        playerStore: PlayerStore,
+        genChunkMines: ChunkGenMines = _genChunkMines,
+    ) {
         this.players = playerStore;
         this.genChunkMines = genChunkMines;
     }
 
     /**
      * Create a chunk at the chunk coordinates represented by `key`
-     *
-     * @protected
-     * @param {bigint} key
-     * @param {Player} player Player to create the chunk with
-     * @returns {Chunk}
      */
-    createChunk(key, player) {
+    protected createChunk(key: ChunkKey, player: Player): Chunk {
         const difficulty = getDifficulty(player);
         const mines = this.genChunkMines(difficulty);
         const chunk = new Chunk(mines);
@@ -70,24 +54,16 @@ class ChunkStore {
     /**
      * Return the chunk at the chunk coordinates represented by `key`
      * or create a new one
-     *
-     * @protected
-     * @param {bigint} key
-     * @param {Player} player Player to create the chunk with
-     * @returns {Chunk}
      */
-    getOrCreateChunk(key, player) {
+    protected getOrCreateChunk(key: ChunkKey, player: Player): Chunk {
         return this.chunks.get(key) ?? this.createChunk(key, player);
     }
 
     /**
      * Return the chunk at the chunk coordinates represented by `key`
      * or undefined
-     *
-     * @param {bigint} chunkid
-     * @returns {Chunk|undefined}
      */
-    getChunk(chunkid) {
+    getChunk(chunkid: ChunkKey): Chunk | undefined {
         return this.chunks.get(chunkid);
     }
 
@@ -95,11 +71,9 @@ class ChunkStore {
      * Return the chunk at the chunk coordinates represented by `key`
      * or throw an error
      *
-     * @param {bigint} chunkid
-     * @returns {Chunk}
      * @throws {Error}
      */
-    expectChunk(chunkid) {
+    expectChunk(chunkid: ChunkKey): Chunk {
         const chunk = this.chunks.get(chunkid);
         if (chunk === undefined) {
             throw new Error(`Missing expected chunk ${chunkid}`);
@@ -109,12 +83,8 @@ class ChunkStore {
 
     /**
      * Set a flag at the target coordinates
-     *
-     * @param {number} x
-     * @param {number} y
-     * @param {Player} player Player to create the chunk with
      */
-    flag(x, y, player) {
+    flag(x: number, y: number, player: Player) {
         // TODO: check whether player is allowed to flag this cell
         const [chunkid, bitpos] = packSplit(x, y);
         this.getOrCreateChunk(chunkid, player).flag(bitpos);
@@ -123,11 +93,8 @@ class ChunkStore {
 
     /**
      * Remove a flag at the target coordinates
-     *
-     * @param {number} x
-     * @param {number} y
      */
-    unflag(x, y) {
+    unflag(x: number, y: number) {
         // TODO: check whether player is allowed to flag this cell
         const [chunkid, bitpos] = packSplit(x, y);
         const chunk = this.chunks.get(chunkid);
@@ -141,11 +108,8 @@ class ChunkStore {
      * Create an empty chunk at the target coordinates
      *
      * TODO: integrate with createChunk
-     *
-     * @param {number} x
-     * @param {number} y
      */
-    createSpawnChunk(x, y) {
+    createSpawnChunk(x: number, y: number) {
         const [key] = packSplit(x, y);
         const chunk = new Chunk(bitfield());
         this.chunks.set(key, chunk);
@@ -154,13 +118,13 @@ class ChunkStore {
     /**
      * Reveal the cell at (x, y). If it is empty, reveal all the
      * neighbors
-     *
-     * @param {number} x
-     * @param {number} y
-     * @param {Player} player
-     * @param {number} [playerId]
      */
-    iterativeReveal(x, y, player, playerId) {
+    iterativeReveal(
+        x: number,
+        y: number,
+        player: Player,
+        playerId?: SyntheticPlayerId,
+    ) {
         playerId ??= this.players.getId(player);
         if (playerId === undefined) {
             console.error('Unknown player', player);
@@ -169,16 +133,15 @@ class ChunkStore {
 
         const initial = pack(x, y);
 
-        /** @type {bigint[]} */
-        const stack = [initial];
+        const stack: PackedCellCoord[] = [initial];
 
         // especially for large open areas, we're
         // going through some work redundantly by adding all 8 neighbors
         // of each cell to the stack to evaluate. instead, keep a set of
         // all the cells we've already dealt with to avoid processing a cell
         // up to 8 times (for each of its neighbors)
-        /** @type {Set<bigint>} */
-        const seen = new Set();
+        /** @type {Set<PackedCellCoord>} */
+        const seen: Set<bigint> = new Set();
 
         // continue to reveal the neighbors of any revealed cell that has a surrounding
         // mine count of zero
@@ -187,10 +150,9 @@ class ChunkStore {
             if (stack.length === 0) return;
 
             // optimization: could get some performance gain with a double ended queue implementation
-            const next = /** @type {bigint } */ (stack.shift());
+            const next = stack.shift()!;
 
-            const key = chunkKey(next);
-            const pos = bitpos(next);
+            const [key, pos] = split(next);
 
             // ensure the chunk exists
             const chunk = this.getOrCreateChunk(key, player);
@@ -236,18 +198,15 @@ class ChunkStore {
      *
      * @param {Player} player
      */
-    kill(player) {
+    kill(player: Player) {
         // kill player, recover cells/chunks
         // emit change(s)
     }
 
     /**
      * Count the mines surrounding the target coordinate
-     *
-     * @param {bigint} packed
-     * @param {Player} player
      */
-    countNeighboringMines(packed, player) {
+    countNeighboringMines(packed: PackedCellCoord, player: Player) {
         // it doesn't make sense to reuse RenderedChunk just for this
         // purpose, but we can likely extract the helper functions
         // and use them to count neighbors here.
@@ -263,12 +222,8 @@ class ChunkStore {
 
     /**
      * Debug/test : create a mine at the target coordinate
-     *
-     * @param {number} x
-     * @param {number} y
-     * @param {Player} player
      */
-    __setMine(x, y, player) {
+    __setMine(x: number, y: number, player: Player) {
         const [chunkid, bitpos] = packSplit(x, y);
         this.getOrCreateChunk(chunkid, player).__setMine(bitpos);
     }
@@ -277,13 +232,8 @@ class ChunkStore {
      * Debug/test : create a mine at the target coordinate
      *
      * Creates mines from a passed-in string array
-     *
-     * @param {number} x
-     * @param {number} y
-     * @param {Player} player
-     * @param {string[]} mines
      */
-    __setMinesAt(x, y, player, mines) {
+    __setMinesAt(x: number, y: number, player: Player, mines: string[]) {
         let oy = 0;
         for (const row of mines) {
             let ox = 0;
@@ -301,12 +251,8 @@ class ChunkStore {
 
     /**
      * Debug / test : set the target coordinate as revealed by `player`
-     *
-     * @param {number} x
-     * @param {number} y
-     * @param {Player} player
      */
-    __setRevealed(x, y, player) {
+    __setRevealed(x: number, y: number, player: Player) {
         const [chunkid, bitpos] = packSplit(x, y);
         this.getOrCreateChunk(chunkid, player).reveal(
             bitpos,
@@ -317,17 +263,15 @@ class ChunkStore {
     /**
      * Render the chunks in the specified viewport using the given
      * renderers
-     *
-     * @template T
-     * @param {import('./render/IntermediateRenderer').IntermediateRenderer} ir
-     * @param {import('./render/IntermediateRenderer').Renderer<T>} renderer
-     * @param {number} absx
-     * @param {number} absy
-     * @param {number} w
-     * @param {number} h
-     * @returns {T[][]}
      */
-    renderWith(ir, renderer, absx, absy, w, h) {
+    renderWith<T>(
+        ir: IntermediateRenderer,
+        renderer: Renderer<T>,
+        absx: number,
+        absy: number,
+        w: number,
+        h: number,
+    ): T[][] {
         // TODO: eliminate the 2d array. instead, let this method
         // be responsible for converting "chunks" back into actual x,y
         // coordinates and calling ... the renderer? some callback?
@@ -337,9 +281,10 @@ class ChunkStore {
         // emit chunks in a sane reading order, but it's not
         // strictly necessary
 
-        /** @type {T[][]} */
-        const rendered = [];
-        // round up?
+        const rendered: T[][] = [];
+
+        // TODO: truncating may eliminate the right/bottom chunks
+
         const cols = w >>> BITPOS_SHIFT;
         const rows = h >>> BITPOS_SHIFT;
 
@@ -348,7 +293,7 @@ class ChunkStore {
         for (let oy = 0; oy < rows; oy++) {
             for (let ox = 0; ox < cols; ox++) {
                 rendered[oy] ??= [];
-                rendered[oy][ox] = this.renderChunk(
+                rendered[oy]![ox] = this.renderChunk(
                     ir,
                     renderer,
                     offsetChunkKey(topleftChunk, ox, oy),
@@ -361,15 +306,12 @@ class ChunkStore {
 
     /**
      * Render a chunk using the given renderers
-     *
-     * @private
-     * @template T
-     * @param {import('./render/IntermediateRenderer').IntermediateRenderer} ir
-     * @param {import('./render/IntermediateRenderer').Renderer<T>} renderer
-     * @param {bigint} key
-     * @returns {T}
      */
-    renderChunk(ir, renderer, key) {
+    renderChunk<T>(
+        ir: IntermediateRenderer,
+        renderer: Renderer<T>,
+        key: ChunkKey,
+    ): T {
         const chunk = this.getChunk(key);
 
         if (chunk === undefined) return renderer.emptyChunk;
@@ -392,5 +334,4 @@ class ChunkStore {
     }
 }
 
-const chunkStore = new ChunkStore(playerStore, _genChunkMines);
-module.exports = { ChunkStore, chunkStore };
+export const chunkStore = new ChunkStore(playerStore, _genChunkMines);

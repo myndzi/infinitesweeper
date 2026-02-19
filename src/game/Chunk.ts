@@ -1,124 +1,76 @@
-// @ts-check
+import type { SyntheticPlayerId } from './PlayerStore.js';
+import type { PackedBitfieldCoord } from './util/coords.js';
 
-/** @typedef {import('./Player')} Player */
-
-const {
+import {
     bitfield,
     bitIsSet,
     setBit,
     bulkUnset,
     clearBit,
-} = require('./util/bitfield');
+    type Bitfield,
+} from './util/bitfield.js';
 
-class Chunk {
-    /**
-     * @readonly
-     * @type {unknown}
-     */
-    seed;
+export class Chunk {
+    readonly seed: unknown;
 
-    /**
-     * @protected
-     * @type {Uint32Array}
-     */
-    mines;
-
-    // future optimization: could use a larger backing store
+    // TODO: future optimization: could use a larger backing store
     // for the buffers and reuse slices of it
-
-    /**
-     * @protected
-     * @type {Uint32Array}
-     */
-    flags = bitfield();
-
-    /**
-     * @protected
-     * @type {Uint32Array}
-     */
-    revealed = bitfield();
+    protected mines: Bitfield;
+    protected flags: Bitfield = bitfield();
+    protected revealed: Bitfield = bitfield();
 
     // TODO: is there ever a case where we care about what cells
     // are revealed without caring about who owns them?
     // perhaps we should just ditch `revealed`?
 
-    /**
-     * @protected
-     * @type {Map<number, Uint32Array>}
-     */
-    owned = new Map();
+    protected owned: Map<SyntheticPlayerId, Bitfield> = new Map();
+    protected generation: number = 0;
 
-    /**
-     * @protected
-     * @type {number}
-     */
-    generation = 0;
-
-    /**
-     * @param {Uint32Array} mines
-     * @param {unknown} seed
-     */
-    constructor(mines, seed = 0) {
+    constructor(mines: Bitfield, seed: unknown = 0) {
         this.mines = mines;
         this.seed = seed;
     }
 
     /**
      * Return true if the cell at `bitpos` is a mine
-     *
-     * @param {number} bitpos
-     * @returns {boolean}
      */
-    isMine(bitpos) {
+    isMine(bitpos: PackedBitfieldCoord): boolean {
         return bitIsSet(this.mines, bitpos);
     }
 
     /**
      * Debug/testing : set a mine at `bitpos`
-     *
-     * @param {number} bitpos
-     * @returns {void}
      */
-    __setMine(bitpos) {
+    __setMine(bitpos: PackedBitfieldCoord): void {
         setBit(this.mines, bitpos);
     }
 
     /**
      * Return true if the cell at `bitpos` is revealed
-     *
-     * @param {number} bitpos
-     * @returns {boolean}
      */
-    isRevealed(bitpos) {
+    isRevealed(bitpos: PackedBitfieldCoord): boolean {
         return bitIsSet(this.revealed, bitpos);
     }
 
     /**
      * Return true if the cell at `bitpos` is flagged
-     *
-     * @param {number} bitpos
-     * @returns {boolean}
      */
-    isFlagged(bitpos) {
+    isFlagged(bitpos: PackedBitfieldCoord): boolean {
         return bitIsSet(this.flags, bitpos);
     }
 
     /**
      * Mark the cell at `bitpos` as flagged
-     *
-     * @param {number} bitpos
      */
-    flag(bitpos) {
+    flag(bitpos: PackedBitfieldCoord) {
         setBit(this.flags, bitpos);
         this.generation++;
     }
 
     /**
      * Mark the cell at `bitpos` as unflagged
-     *
-     * @param {number} bitpos
      */
-    unflag(bitpos) {
+    unflag(bitpos: PackedBitfieldCoord) {
         clearBit(this.flags, bitpos);
         this.generation++;
     }
@@ -129,12 +81,8 @@ class Chunk {
      *
      * Return true if the revealed cell was a mine and the
      * player should be killed
-     *
-     * @param {number} bitpos
-     * @param {number} playerId
-     * @returns {boolean}
      */
-    reveal(bitpos, playerId) {
+    reveal(bitpos: PackedBitfieldCoord, playerId: SyntheticPlayerId): boolean {
         // this method just updates the state, but does not perform
         // the recursive revealing logic. future optimization: incorporate
         // a more efficient "reveal" algorithm at this level
@@ -161,11 +109,8 @@ class Chunk {
      *
      * Return true if the chunk should be destroyed entirely
      * (== no remaining players own cells in this chunk)
-     *
-     * @param {number} playerId
-     * @returns {boolean}
      */
-    kill(playerId) {
+    kill(playerId: SyntheticPlayerId): boolean {
         // ... do we just keep the same mine layout when a player dies?
         // i think so, chunks are currently pretty small. plus, what would
         // you do to the other active player(s) in the chunk?
@@ -186,11 +131,8 @@ class Chunk {
 
     /**
      * If the cell at `bitpos` is owned, return the player id; else, undefined
-     *
-     * @param {number} bitpos
-     * @returns {number|undefined}
      */
-    ownerid(bitpos) {
+    ownerid(bitpos: PackedBitfieldCoord): SyntheticPlayerId | undefined {
         if (!bitIsSet(this.revealed, bitpos)) return undefined;
 
         for (const [ownerid, bits] of this.owned.entries()) {
@@ -205,10 +147,9 @@ class Chunk {
      * @param {number} generation
      * @returns {boolean}
      */
-    isNewerThan(generation) {
+    isNewerThan(generation: number): boolean {
         return this.generation > generation;
     }
 }
 
-const EMPTY_CHUNK = new Chunk(bitfield());
-module.exports = { Chunk, EMPTY_CHUNK };
+export const EMPTY_CHUNK = new Chunk(bitfield());

@@ -1,8 +1,5 @@
-// @ts-check
-/// <reference types="vitest/globals" />
-
-const { CHUNK_EDGE_SIZE } = require('./constants');
-const { unpack, pack, offset, humanCoords, chunkKey } = require('./coords');
+import { CHUNK_EDGE_SIZE } from './constants.js';
+import { unpack, pack, offset, humanCoords, chunkKey } from './coords.js';
 
 it('[pack/unpack].chunk is reversible', () => {
     const xy = unpack.chunk(pack.chunk(CHUNK_EDGE_SIZE * 2, CHUNK_EDGE_SIZE));

@@ -1,6 +1,13 @@
 {
+    "typescript.preferences.preferTypeOnlyAutoImports": true,
+    "typescript.preferences.organizeImports": {
+        "typeOrder": "first"
+    },
     "[typescript]": {
-        "editor.formatOnSave": true
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+            "source.organizeImports": "always"
+        }
     },
     "[javascript]": {
         "editor.maxTokenizationLineLength": 2500,

@@ -1,17 +1,10 @@
-// @ts-check
+import { chunkStore } from './ChunkStore.js';
+import { Player } from './Player.js';
+import { playerStore } from './PlayerStore.js';
 
-const Player = require('./Player');
-const { chunkStore } = require('./ChunkStore');
-const { playerStore } = require('./PlayerStore');
-
-const { IntermediateRenderer } = require('./render/IntermediateRenderer');
-const {
-    stringRenderer,
-    debugStringRenderer,
-} = require('./render/StringRenderer');
-const { setSeed, printMultipleChunks } = require('./util/chunkops');
-const { setTrace } = require('./config');
-const { humanCoords } = require('./util/coords');
+import { IntermediateRenderer } from './render/IntermediateRenderer.js';
+import { stringRenderer } from './render/StringRenderer.js';
+import { printMultipleChunks, setSeed } from './util/chunkops.js';
 
 const player = new Player('foo', 0, 0, '#ffffff');
 const playerId = playerStore.add(player);

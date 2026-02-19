@@ -1,24 +1,38 @@
-// @ts-check
+import type { Chunk } from '../Chunk.js';
+import type {
+    CellStateArray,
+    CellStateCode,
+    CellStateProps,
+} from './CellState.js';
 
-/** @typedef {import('../Chunk').Chunk} Chunk */
-/** @typedef {import('./CellState').CellStateProps} CellStateProps */
+import type { SyntheticPlayerId } from '../PlayerStore.js';
+import { CHUNK_EDGE_SIZE, NUM_CHUNK_BITS } from '../util/constants.js';
+import { pack } from '../util/coords.js';
+import { CellState, setCellState as set } from './CellState.js';
 
-/**
- * Renderer interface
- *
- * @template T
- * @typedef {Object} Renderer
- * @property {(ox: number, oy: number, props: CellStateProps) => void} render Render a cell
- * @property {(ox: number, oy: number) => void} empty Render (or ignore!) an empty cell
- * @property {() => T} finish Return the rendered data
- * @property {Readonly<T>} emptyChunk
- */
+export interface Renderer<T> {
+    /**
+     * Render a cell
+     * `ox` and `oy` are relative to the chunk
+     */
+    render(ox: number, oy: number, props: CellStateProps): void;
+    /**
+     * Report an empty cell
+     * `ox` and `oy` are relative to the chunk
+     */
+    empty(ox: number, oy: number): void;
+    /**
+     * Return the rendered data
+     */
+    finish(): T;
+    /**
+     * A fully-empty chunk
+     */
+    readonly emptyChunk: T;
+}
 
-const { CHUNK_EDGE_SIZE, NUM_CHUNK_BITS } = require('../util/constants');
-const {
-    pack: { bitpos: packBitpos },
-} = require('../util/coords');
-const { CellState, setCellState: set } = require('./CellState');
+// avoid dereferencing property in hot loops
+const { bitpos: packBitpos } = pack;
 
 const ROWEND = CHUNK_EDGE_SIZE - 1;
 const MAX = CHUNK_EDGE_SIZE;
@@ -30,18 +44,13 @@ const MAX = CHUNK_EDGE_SIZE;
  * Synchronous and ephemeral use only: the class is written
  * to be GC-light by using mutation instead of creating and
  * destroying data.
- *
- *
  */
-class IntermediateRenderer {
+export class IntermediateRenderer {
     /**
      * The id of the player this chunk is being rendered for.
      * Used to determine which cells are ownable/interactable
-     *
-     * @private
-     * @type {number}
      */
-    forPlayerId;
+    protected forPlayerId: SyntheticPlayerId;
 
     /**
      * A TypedArray that contains one element for each bit
@@ -51,14 +60,15 @@ class IntermediateRenderer {
      *
      * Color information for edges between players is not kept,
      * but which edges to draw is.
-     *
-     * @private
-     * @type {Uint32Array}
      */
-    cells = new Uint32Array(NUM_CHUNK_BITS);
+    protected cells: CellStateArray = new Uint32Array(
+        NUM_CHUNK_BITS,
+    ) as CellStateArray;
 
-    /** @type {import('./CellState').CellState} */
-    cellState = new CellState();
+    /**
+     * A CellState instance to be reused for rendering
+     */
+    protected cellState: CellState = new CellState();
 
     /**
      * Construct a new IntermediateRenderer
@@ -66,10 +76,8 @@ class IntermediateRenderer {
      * `playerId` is the synthetic (low-numeric) id of the player
      * being rendered; this is required to calculate which cells
      * may be owned (clicked) by a player
-     *
-     * @param {number} playerId
      */
-    constructor(playerId) {
+    constructor(playerId: SyntheticPlayerId) {
         this.forPlayerId = playerId;
     }
 
@@ -88,18 +96,18 @@ class IntermediateRenderer {
      * contents, but some of those contents are affected by
      * the immediate neighbors.
      *
-     * @param {Chunk} chunk
-     * @param {Chunk|undefined} nw
-     * @param {Chunk|undefined} n
-     * @param {Chunk|undefined} ne
-     * @param {Chunk|undefined} w
-     * @param {Chunk|undefined} e
-     * @param {Chunk|undefined} sw
-     * @param {Chunk|undefined} s
-     * @param {Chunk|undefined} se
-     * @returns {void}
      */
-    updateFrom(chunk, nw, n, ne, w, e, sw, s, se) {
+    updateFrom(
+        chunk: Chunk,
+        nw: Chunk | undefined,
+        n: Chunk | undefined,
+        ne: Chunk | undefined,
+        w: Chunk | undefined,
+        e: Chunk | undefined,
+        sw: Chunk | undefined,
+        s: Chunk | undefined,
+        se: Chunk | undefined,
+    ): void {
         this.cells.fill(0);
         const { cells, forPlayerId } = this;
 
@@ -130,10 +138,8 @@ class IntermediateRenderer {
      * Call the target renderer with each coordinate and a CellState
      * instance. The CellState instance is reused: do not mutate or
      * hold a reference
-     *
-     * @param {Renderer<any>} renderer
      */
-    update(renderer) {
+    update(renderer: Renderer<unknown>) {
         const cells = this.cells;
         const state = this.cellState;
 
@@ -146,11 +152,9 @@ class IntermediateRenderer {
                     continue;
                 }
 
-                state.updateFromCode(code);
-                renderer.render(ox, oy, /** @type {CellStateProps} */ (state));
+                state.updateFromCode(code as CellStateCode);
+                renderer.render(ox, oy, /** @type {CellStateProps} */ state);
             }
         }
     }
 }
-
-module.exports = { IntermediateRenderer };

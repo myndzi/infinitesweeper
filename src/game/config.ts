@@ -1,0 +1,1 @@
+export const STARTING_MINE_DENSITY = 12;

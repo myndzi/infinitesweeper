@@ -1,29 +1,22 @@
-// @ts-check
+import Rand from 'rand-seed';
 
-const Rand = require('rand-seed').default;
-let rng = new Rand();
-
-/** @param {string} seed */
-const setSeed = seed => (rng = new Rand(seed));
-
-const { bitIsSet } = require('./bitfield');
-const {
+import {
     BITPOS_IDX_SHIFT,
     BITPOS_BITS_MASK,
-    CHUNK_EDGE_SIZE,
-    BITFIELD_SIZE,
     NUM_CHUNK_BITS,
-} = require('./constants');
+} from './constants.js';
+import { bitfield, type Bitfield } from './bitfield.js';
+
+let rng = new Rand();
+
+export const setSeed = (seed: string) => (rng = new Rand(seed));
 
 // shuffle buffer for generating mines in chunks while avoiding repeats
-/** @type {number[]} */
-const POSITIONS = new Array(NUM_CHUNK_BITS).fill(0).map((_, idx) => idx);
+const POSITIONS: number[] = new Array(NUM_CHUNK_BITS)
+    .fill(0)
+    .map((_, idx) => idx);
 
-/**
- * @param {unknown[]} arr
- * @param {number} num
- */
-const shuffle = (arr, num) => {
+const shuffle = (arr: unknown[], num: number) => {
     let i = arr.length;
     let j;
     let temp;
@@ -41,20 +34,17 @@ const shuffle = (arr, num) => {
 
 /**
  * Generate a bitfield with a uniform distribution of mines
- *
- * @param {number} numMines The number of mines to generate
- * @returns {Uint32Array}
  */
-const genChunkMines = numMines => {
-    const buf = new Uint32Array(BITFIELD_SIZE);
+export const genChunkMines = (numMines: number): Bitfield => {
+    const buf = bitfield();
     shuffle(POSITIONS, numMines);
 
     let pos = POSITIONS.length - 1;
     for (let i = 0; pos >= 0 && i < numMines; i++) {
-        const bitpos = POSITIONS[pos--];
+        const bitpos = POSITIONS[pos--]!;
         const idx = bitpos >> BITPOS_IDX_SHIFT;
         const bit = (1 << (bitpos & BITPOS_BITS_MASK)) >>> 0;
-        buf[idx] |= bit;
+        buf[idx]! |= bit;
     }
 
     return buf;
@@ -67,21 +57,21 @@ let _uniq = 0;
  * Takes a 2d array of chunks rendered as strings and recombines
  * them so that horizontal chunks are joined (e.g. for printing
  * to a terminal)
- *
- * @param {string[][]} rendered
- * @param {{sep?: string, uniq?: boolean}} opts
  */
-const printMultipleChunks = (rendered, opts = {}) => {
+export const printMultipleChunks = (
+    rendered: string[][],
+    opts: { sep?: string; uniq?: boolean } = {},
+) => {
     const sep = opts.sep ?? '';
     const uniq = opts.uniq ?? false;
 
     for (let y = 0; y < rendered.length; y++) {
-        const chunkrow = rendered[y];
+        const chunkrow = rendered[y]!;
 
         /** @type {string[]} */
-        const rows = [];
+        const rows: string[] = [];
         for (let x = 0; x < rendered.length; x++) {
-            const strs = chunkrow[x].split('\n');
+            const strs = chunkrow[x]!.split('\n');
 
             for (let i = 0; i < strs.length; i++) {
                 rows[i] ??= '';
@@ -96,10 +86,4 @@ const printMultipleChunks = (rendered, opts = {}) => {
         }
         if (sep) console.log(sep);
     }
-};
-
-module.exports = {
-    genChunkMines,
-    setSeed,
-    printMultipleChunks,
 };
