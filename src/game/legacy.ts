@@ -4,9 +4,9 @@ export type LegacyChunkCell = {
     y: number;
     isMine: boolean;
     adjacentMines?: number | null | undefined;
-    state?: LegacyCellState;
-    owner?: string | null;
-    flag?: boolean;
+    state?: LegacyCellState | undefined;
+    owner?: string | null | undefined;
+    flag?: boolean | undefined;
 };
 export type LegacyPlayerData = {
     player: {
@@ -19,6 +19,10 @@ export type LegacyPlayerData = {
     };
     uncoveredCells: LegacyChunkCell[];
 };
+export type LegacyCoord = { x: number; y: number };
+export type LegacyPlayerCoord = LegacyCoord & { playerId: string };
+export type LegacyFlagged = LegacyCoord & { flagged: true };
+export type LegacyChunk = LegacyCoord & { cells: LegacyChunkCell[] };
 
 export namespace Update {
     export type Move = {
@@ -33,11 +37,19 @@ export namespace Update {
         x: number;
         y: number;
         flagged: boolean;
+        uncoveredCells?: undefined;
+    };
+    export type Autoflag = {
+        type: 'autoFlag';
+        playerId: string;
+        flags: LegacyFlagged[];
+        uncoveredCells?: undefined;
     };
     export type Spawn = {
         type: 'spawn';
         playerId: string;
         uncoveredCells: LegacyChunkCell[];
+        score?: undefined;
     };
     export type Respawn = {
         type: 'respawn';
@@ -45,11 +57,6 @@ export namespace Update {
         x: number;
         y: number;
         uncoveredCells: LegacyChunkCell[] | undefined;
-    };
-    export type Autoflag = {
-        type: 'autoFlag';
-        playerId: string;
-        flags: LegacyFlagged[];
     };
     export type Death = {
         type: 'death';
@@ -73,15 +80,11 @@ export namespace Update {
 export type LegacyUpdate =
     | Update.Move
     | Update.Flag
+    | Update.Autoflag
     | Update.Spawn
     | Update.Respawn
-    | Update.Autoflag
     | Update.Death
     | Update.NoMoves;
-
-export type LegacyCoord = { x: number; y: number };
-export type LegacyFlagged = LegacyCoord & { flagged: true };
-export type LegacyChunk = LegacyCoord & { cells: LegacyChunkCell[] };
 
 export const splitKey = (v: string) =>
     v.split(',').map(Number) as [number, number];

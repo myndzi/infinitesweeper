@@ -1,4 +1,10 @@
 import type { Server } from 'socket.io';
+import type {
+    ClientToServerEvents,
+    InterServerEvents,
+    ServerToClientEvents,
+    SocketData,
+} from '../protocol.js';
 import { type GetChunkOptions, Grid } from './Grid.js';
 import { type SerializedPlayer, Player } from './Player.js';
 import {
@@ -53,7 +59,12 @@ export class Game {
     players: Map<string, Player>;
     deadPlayers: Map<string, number>;
     colorIndex: number;
-    io: Server | null;
+    io: Server<
+        ClientToServerEvents,
+        ServerToClientEvents,
+        InterServerEvents,
+        SocketData
+    > | null;
     safeRadius: number;
     aiPlayers: Set<string>;
     aiNextActionAt: Map<string, number>;
@@ -831,7 +842,7 @@ export class Game {
                 this.grid.recoverCell(cell.x, cell.y, playerId);
 
                 if (this.io) {
-                    const updatedCells = [];
+                    const updatedCells: LegacyChunkCell[] = [];
                     const seen = new Set();
                     for (let dx = -1; dx <= 1; dx++) {
                         for (let dy = -1; dy <= 1; dy++) {

@@ -1,4 +1,10 @@
-import type { LegacyChunk, LegacyCoord, LegacyUpdate } from './game/legacy.js';
+import type {
+    LegacyChunk,
+    LegacyChunkCell,
+    LegacyCoord,
+    LegacyPlayerCoord,
+    LegacyUpdate,
+} from './game/legacy.js';
 import type { SerializedPlayer } from './game/Player.js';
 
 export type InitialData = {
@@ -9,8 +15,13 @@ export type InitialData = {
 
 export type RequestChunks = {
     debug?: boolean;
-    debugToken?: string;
+    debugToken?: string | undefined;
     chunkKeys: string[];
+};
+
+export type FlagsRemoved = {
+    playerId: string;
+    flags: LegacyCoord[];
 };
 
 export type Login = {
@@ -41,6 +52,10 @@ export interface ServerToClientEvents {
     playerJoined: (data: SerializedPlayer) => void;
     playerLeft: (data: string) => void;
     gameUpdate: (data: LegacyUpdate | PeriodicGameUpdate) => void;
+    flagsRemoved: (data: FlagsRemoved) => void;
+    recoveryComplete: (data: { playerId: string }) => void;
+    cellsUpdated: (data: { cells: LegacyChunkCell[] }) => void;
+    cellRecovered: (data: LegacyPlayerCoord) => void;
     chunks: (data: LegacyChunk[]) => void;
     debugInvalid: () => void;
     activePlayers: (data: ActivePlayers) => void;
